@@ -9,20 +9,48 @@ module JsonLdHelper
     value.is_a?(Array) ? value.first : value
   end
 
-  def supported_context?(json)
-    equals_or_includes?(json['@context'], ActivityPub::TagManager::CONTEXT)
+  def value_or_id(value)
+    value.is_a?(String) || value.nil? ? value : value['id']
   end
 
-  def fetch_resource(uri)
+  def supported_context?(json)
+    !json.nil? && equals_or_includes?(json['@context'], ActivityPub::TagManager::CONTEXT)
+  end
+
+  def canonicalize(json)
+    graph = RDF::Graph.new << JSON::LD::API.toRdf(json)
+    graph.dump(:normalize)
+  end
+
+  def fetch_resource(uri, id)
+    unless id
+      json = fetch_resource_without_id_validation(uri)
+      return unless json
+      uri = json['id']
+    end
+
+    json = fetch_resource_without_id_validation(uri)
+    json.present? && json['id'] == uri ? json : nil
+  end
+
+  def fetch_resource_without_id_validation(uri)
     response = build_request(uri).perform
     return if response.code != 200
     body_to_json(response.to_s)
   end
 
   def body_to_json(body)
-    body.nil? ? nil : Oj.load(body, mode: :strict)
+    body.is_a?(String) ? Oj.load(body, mode: :strict) : body
   rescue Oj::ParseError
     nil
+  end
+
+  def merge_context(context, new_context)
+    if context.is_a?(Array)
+      context << new_context
+    else
+      [context, new_context]
+    end
   end
 
   private
